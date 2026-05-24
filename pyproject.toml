@@ -1,0 +1,14 @@
+[project]
+name = "adxl345-vib"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "esphome>=2026.4.5",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.13",
+]

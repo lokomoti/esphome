@@ -1,0 +1,14 @@
+{
+  "name": "Python Base Dev Container",
+  "image": "mcr.microsoft.com/devcontainers/python:3.14",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "redhat.vscode-yaml"
+      ]
+    }
+  },
+  "postCreateCommand": "bash -lc 'set -e; export PATH=\"$HOME/.local/bin:$PATH\"; command -v uv >/dev/null 2>&1 || (curl -LsSf https://astral.sh/uv/install.sh | sh); UV_LINK_MODE=copy \"$HOME/.local/bin/uv\" python install 3.14; UV_LINK_MODE=copy \"$HOME/.local/bin/uv\" sync --locked --verbose'"
+}
