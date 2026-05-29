@@ -5,6 +5,7 @@ from esphome.const import CONF_ID
 from esphome.components import modbus_tcp_server, sensor, number
 
 DEPENDENCIES = ["modbus_tcp_server"]
+AUTO_LOAD = ["sensor", "number"]
 MULTI_CONF = True
 
 CONF_MODBUS_TCP_SERVER_ID = "modbus_tcp_server_id"
@@ -62,7 +63,8 @@ def _validate_source(config):
     has_sensor = CONF_SENSOR_ID in config
     has_number = CONF_NUMBER_ID in config
     if has_sensor == has_number:
-        raise cv.Invalid("Exactly one of sensor_id or number_id must be provided")
+        raise cv.Invalid(
+            "Exactly one of sensor_id or number_id must be provided")
     return config
 
 

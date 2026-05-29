@@ -2,8 +2,9 @@
 
 #include "esphome/core/helpers.h"
 #include "esphome/core/log.h"
-#include "esphome/components/number/number.h"
 #include "esphome/components/sensor/sensor.h"
+#include "esphome/components/number/number.h"
+
 #include <cmath>
 #include <cstdint>
 #include <vector>
@@ -32,16 +33,8 @@ class ServerRegister {
   ServerRegister(uint16_t address, RegisterType register_type, ValueType value_type)
       : address_(address), register_type_(register_type), value_type_(value_type) {}
 
-  void set_sensor(sensor::Sensor *sensor) {
-    ESP_LOGI("modbus_tcp_server", "set_sensor addr=%u", this->address_);
-    this->sensor_ = sensor;
-  }
-
-  void set_number(number::Number *number) {
-    ESP_LOGI("modbus_tcp_server", "set_number addr=%u", this->address_);
-    this->number_ = number;
-  }
-
+  void set_sensor(sensor::Sensor *sensor) { this->sensor_ = sensor; }
+  void set_number(number::Number *number) { this->number_ = number; }
   void set_scale(float scale) { this->scale_ = scale; }
   void set_offset(float offset) { this->offset_ = offset; }
 
