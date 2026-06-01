@@ -13,6 +13,8 @@
 #include <sys/select.h>
 #endif
 
+#include <vector>
+
 namespace esphome {
 namespace modbus_tcp_server {
 
@@ -37,6 +39,7 @@ class ModbusTCPServer : public Component {
 
   void set_port(uint16_t port) { this->port_ = port; }
   void set_unit_id(uint8_t unit_id) { this->unit_id_ = unit_id; }
+  void set_max_clients(uint8_t max_clients) { this->max_clients_ = max_clients; }
 
   void register_server_register(ServerRegister *reg) { this->bank_.add_register(reg); }
 
@@ -44,6 +47,7 @@ class ModbusTCPServer : public Component {
   bool ensure_server_();
   void accept_client_();
   void service_client_(int client_sock);
+  void close_client_(int sock);
 
   bool recv_exact_(int sock, uint8_t *data, size_t len);
   bool send_all_(int sock, const uint8_t *data, size_t len);
@@ -54,9 +58,10 @@ class ModbusTCPServer : public Component {
 
   uint16_t port_{502};
   uint8_t unit_id_{1};
+  uint8_t max_clients_{4};
 
   int listen_sock_{-1};
-  int client_sock_{-1};
+  std::vector<int> client_socks_;
 
   RegisterBank bank_;
 };

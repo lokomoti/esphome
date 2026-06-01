@@ -1,4 +1,5 @@
 #include "modbus_tcp_server.h"
+#include <algorithm>
 
 namespace esphome {
 namespace modbus_tcp_server {
@@ -12,6 +13,7 @@ void ModbusTCPServer::dump_config() {
   ESP_LOGCONFIG(TAG, "Modbus TCP Server:");
   ESP_LOGCONFIG(TAG, "  Port: %u", this->port_);
   ESP_LOGCONFIG(TAG, "  Unit ID: %u", this->unit_id_);
+  ESP_LOGCONFIG(TAG, "  Max clients: %u", this->max_clients_);
 }
 
 bool ModbusTCPServer::ensure_server_() {
@@ -28,6 +30,11 @@ bool ModbusTCPServer::ensure_server_() {
   int opt = 1;
   ::setsockopt(this->listen_sock_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
+  // Make the listening socket non-blocking so accept() returns immediately
+  // when no pending connections are queued.
+  int flags = ::fcntl(this->listen_sock_, F_GETFL, 0);
+  ::fcntl(this->listen_sock_, F_SETFL, flags | O_NONBLOCK);
+
   struct sockaddr_in addr {};
   addr.sin_family = AF_INET;
   addr.sin_port = htons(this->port_);
@@ -40,7 +47,7 @@ bool ModbusTCPServer::ensure_server_() {
     return false;
   }
 
-  if (::listen(this->listen_sock_, 1) != 0) {
+  if (::listen(this->listen_sock_, 5) != 0) {
     ESP_LOGE(TAG, "Listen failed: errno=%d", errno);
     ::close(this->listen_sock_);
     this->listen_sock_ = -1;
@@ -56,56 +63,60 @@ void ModbusTCPServer::loop() {
     return;
   }
 
-  if (this->client_sock_ < 0) {
-    this->accept_client_();
-  } else {
-    this->service_client_(this->client_sock_);
+  this->accept_client_();
+
+  // Snapshot the current client list before iterating so that a close inside
+  // service_client_() does not invalidate the in-progress iteration.
+  std::vector<int> to_service = this->client_socks_;
+  for (int sock : to_service) {
+    this->service_client_(sock);
   }
 }
 
 void ModbusTCPServer::accept_client_() {
-  struct timeval timeout {};
-  timeout.tv_sec = 0;
-  timeout.tv_usec = 1000;
+  // Drain all pending connections up to max_clients_ in one loop pass.
+  // The listening socket is non-blocking, so accept() returns -1/EAGAIN
+  // immediately when no more connections are queued.
+  while (this->client_socks_.size() < this->max_clients_) {
+    struct sockaddr_in source_addr {};
+    socklen_t addr_len = sizeof(source_addr);
+    int sock = ::accept(this->listen_sock_, reinterpret_cast<struct sockaddr *>(&source_addr), &addr_len);
+    if (sock < 0) {
+      break;  // EAGAIN/EWOULDBLOCK: no pending connections
+    }
 
-  fd_set readfds;
-  FD_ZERO(&readfds);
-  FD_SET(this->listen_sock_, &readfds);
+    // Set client socket to non-blocking so recv/send never stall the loop.
+    int flags = ::fcntl(sock, F_GETFL, 0);
+    ::fcntl(sock, F_SETFL, flags | O_NONBLOCK);
 
-  int rc = ::select(this->listen_sock_ + 1, &readfds, nullptr, nullptr, &timeout);
-  if (rc <= 0) {
-    return;
+    this->client_socks_.push_back(sock);
+    ESP_LOGI(TAG, "Client connected (%u active)", (unsigned) this->client_socks_.size());
   }
+}
 
-  if (!FD_ISSET(this->listen_sock_, &readfds)) {
-    return;
+void ModbusTCPServer::close_client_(int sock) {
+  ::close(sock);
+  auto it = std::find(this->client_socks_.begin(), this->client_socks_.end(), sock);
+  if (it != this->client_socks_.end()) {
+    this->client_socks_.erase(it);
   }
-
-  struct sockaddr_in source_addr {};
-  socklen_t addr_len = sizeof(source_addr);
-  int sock = ::accept(this->listen_sock_, reinterpret_cast<struct sockaddr *>(&source_addr), &addr_len);
-  if (sock < 0) {
-    return;
-  }
-
-  ESP_LOGI(TAG, "Client connected");
-  this->client_sock_ = sock;
-
-  struct timeval rw_timeout {};
-  rw_timeout.tv_sec = 0;
-  rw_timeout.tv_usec = 100000;
-  ::setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &rw_timeout, sizeof(rw_timeout));
-  ::setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &rw_timeout, sizeof(rw_timeout));
+  ESP_LOGI(TAG, "Client closed (%u remaining)", (unsigned) this->client_socks_.size());
 }
 
 bool ModbusTCPServer::recv_exact_(int sock, uint8_t *data, size_t len) {
   size_t received = 0;
   while (received < len) {
     int rc = ::recv(sock, data + received, len - received, 0);
-    if (rc <= 0) {
+    if (rc > 0) {
+      received += rc;
+    } else if (rc == 0) {
+      return false;  // connection closed by peer
+    } else {
+      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        continue;  // no data yet; spin (Modbus messages are small and arrive quickly)
+      }
       return false;
     }
-    received += rc;
   }
   return true;
 }
@@ -114,10 +125,16 @@ bool ModbusTCPServer::send_all_(int sock, const uint8_t *data, size_t len) {
   size_t sent = 0;
   while (sent < len) {
     int rc = ::send(sock, data + sent, len - sent, 0);
-    if (rc <= 0) {
+    if (rc > 0) {
+      sent += rc;
+    } else if (rc == 0) {
+      return false;
+    } else {
+      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        continue;  // send buffer temporarily full; spin
+      }
       return false;
     }
-    sent += rc;
   }
   return true;
 }
@@ -203,29 +220,30 @@ void ModbusTCPServer::service_client_(int client_sock) {
   int peek = ::recv(client_sock, header, sizeof(header), MSG_PEEK);
   if (peek == 0) {
     ESP_LOGI(TAG, "Client disconnected");
-    ::close(this->client_sock_);
-    this->client_sock_ = -1;
+    this->close_client_(client_sock);
     return;
   }
   if (peek < 0) {
+    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+      return;  // no data available this loop iteration
+    }
+    this->close_client_(client_sock);
     return;
   }
   if (peek < 7) {
-    return;
+    return;  // partial header; wait for more data
   }
 
   if (!this->recv_exact_(client_sock, header, 7)) {
     ESP_LOGW(TAG, "Failed to read MBAP header");
-    ::close(this->client_sock_);
-    this->client_sock_ = -1;
+    this->close_client_(client_sock);
     return;
   }
 
   uint16_t length = (uint16_t(header[4]) << 8) | uint16_t(header[5]);
   if (length < 2 || length > 253) {
     ESP_LOGW(TAG, "Invalid MBAP length: %u", length);
-    ::close(this->client_sock_);
-    this->client_sock_ = -1;
+    this->close_client_(client_sock);
     return;
   }
 
@@ -236,8 +254,7 @@ void ModbusTCPServer::service_client_(int client_sock) {
   std::vector<uint8_t> rest(pdu_len);
   if (pdu_len > 0 && !this->recv_exact_(client_sock, rest.data(), pdu_len)) {
     ESP_LOGW(TAG, "Failed to read request PDU");
-    ::close(this->client_sock_);
-    this->client_sock_ = -1;
+    this->close_client_(client_sock);
     return;
   }
 
