@@ -3,6 +3,7 @@
 #include "esphome/core/component.h"
 #include "esphome/core/log.h"
 #include "esphome/components/sensor/sensor.h"
+#include "esphome/core/automation.h"
 #include "register_bank.h"
 
 #ifdef USE_ESP32
@@ -18,6 +19,13 @@
 
 namespace esphome {
 namespace modbus_tcp_server {
+
+class ModbusTCPServer;
+
+class ModbusTCPServerRequestTrigger : public Trigger<> {
+ public:
+  explicit ModbusTCPServerRequestTrigger(ModbusTCPServer *parent);
+};
 
 static const char *const TAG = "modbus_tcp_server";
 
@@ -42,6 +50,7 @@ class ModbusTCPServer : public Component {
   void set_unit_id(uint8_t unit_id) { this->unit_id_ = unit_id; }
   void set_max_clients(uint8_t max_clients) { this->max_clients_ = max_clients; }
   void set_connected_clients_sensor(sensor::Sensor *sensor) { this->connected_clients_sensor_ = sensor; }
+  void add_on_request_trigger(ModbusTCPServerRequestTrigger *trigger) { this->on_request_triggers_.push_back(trigger); }
 
   void register_server_register(ServerRegister *reg) { this->bank_.add_register(reg); }
 
@@ -58,6 +67,7 @@ class ModbusTCPServer : public Component {
   void send_exception_(int sock, const ModbusRequest &req, ModbusExceptionCode ex);
   void handle_read_registers_(int sock, const ModbusRequest &req, RegisterType type);
   void publish_connected_clients_if_changed_();
+  void fire_on_request_triggers_();
 
   uint16_t port_{502};
   uint8_t unit_id_{1};
@@ -67,6 +77,7 @@ class ModbusTCPServer : public Component {
   std::vector<int> client_socks_;
   sensor::Sensor *connected_clients_sensor_{nullptr};
   int32_t last_connected_clients_{-1};
+  std::vector<ModbusTCPServerRequestTrigger *> on_request_triggers_;
 
   RegisterBank bank_;
 };

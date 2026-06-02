@@ -1,7 +1,8 @@
+import esphome.automation as automation
 import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome.components import sensor
-from esphome.const import CONF_ID, CONF_PORT
+from esphome.const import CONF_ID, CONF_PORT, CONF_TRIGGER_ID
 
 DEPENDENCIES = ["network"]
 MULTI_CONF = False
@@ -9,10 +10,14 @@ MULTI_CONF = False
 CONF_UNIT_ID = "unit_id"
 CONF_MAX_CLIENTS = "max_clients"
 CONF_CONNECTED_CLIENTS = "connected_clients"
+CONF_ON_REQUEST = "on_request"
 
 modbus_tcp_server_ns = cg.esphome_ns.namespace("modbus_tcp_server")
 
 ModbusTCPServer = modbus_tcp_server_ns.class_("ModbusTCPServer", cg.Component)
+ModbusTCPServerRequestTrigger = modbus_tcp_server_ns.class_(
+    "ModbusTCPServerRequestTrigger", automation.Trigger.template()
+)
 
 CONFIG_SCHEMA = cv.Schema(
     {
@@ -24,6 +29,11 @@ CONFIG_SCHEMA = cv.Schema(
             accuracy_decimals=0,
             state_class="measurement",
             icon="mdi:account-multiple",
+        ),
+        cv.Optional(CONF_ON_REQUEST): automation.validate_automation(
+            {
+                cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(ModbusTCPServerRequestTrigger),
+            }
         ),
     }
 ).extend(cv.COMPONENT_SCHEMA)
@@ -39,3 +49,7 @@ async def to_code(config):
     if CONF_CONNECTED_CLIENTS in config:
         sens = await sensor.new_sensor(config[CONF_CONNECTED_CLIENTS])
         cg.add(var.set_connected_clients_sensor(sens))
+
+    for conf in config.get(CONF_ON_REQUEST, []):
+        trigger = cg.new_Pvariable(conf[CONF_TRIGGER_ID], var)
+        await automation.build_automation(trigger, [], conf)

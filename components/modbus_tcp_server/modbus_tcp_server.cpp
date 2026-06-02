@@ -4,6 +4,10 @@
 namespace esphome {
 namespace modbus_tcp_server {
 
+ModbusTCPServerRequestTrigger::ModbusTCPServerRequestTrigger(ModbusTCPServer *parent) {
+  parent->add_on_request_trigger(this);
+}
+
 void ModbusTCPServer::setup() {
   ESP_LOGI(TAG, "Setting up Modbus TCP Server...");
   this->ensure_server_();
@@ -89,6 +93,12 @@ void ModbusTCPServer::publish_connected_clients_if_changed_() {
 
   this->last_connected_clients_ = current;
   this->connected_clients_sensor_->publish_state(current);
+}
+
+void ModbusTCPServer::fire_on_request_triggers_() {
+  for (auto *trigger : this->on_request_triggers_) {
+    trigger->trigger();
+  }
 }
 
 void ModbusTCPServer::accept_client_() {
@@ -298,6 +308,8 @@ void ModbusTCPServer::service_client_(int client_sock) {
     ESP_LOGW(TAG, "Ignoring request for unit id %u (configured %u)", req.unit_id, this->unit_id_);
     return;
   }
+
+  this->fire_on_request_triggers_();
 
   switch (req.function_code) {
     case 0x03:
