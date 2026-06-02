@@ -7,6 +7,7 @@ namespace modbus_tcp_server {
 void ModbusTCPServer::setup() {
   ESP_LOGI(TAG, "Setting up Modbus TCP Server...");
   this->ensure_server_();
+  this->publish_connected_clients_if_changed_();
 }
 
 void ModbusTCPServer::dump_config() {
@@ -14,6 +15,7 @@ void ModbusTCPServer::dump_config() {
   ESP_LOGCONFIG(TAG, "  Port: %u", this->port_);
   ESP_LOGCONFIG(TAG, "  Unit ID: %u", this->unit_id_);
   ESP_LOGCONFIG(TAG, "  Max clients: %u", this->max_clients_);
+  LOG_SENSOR("  ", "Connected clients", this->connected_clients_sensor_);
 }
 
 bool ModbusTCPServer::ensure_server_() {
@@ -71,6 +73,22 @@ void ModbusTCPServer::loop() {
   for (int sock : to_service) {
     this->service_client_(sock);
   }
+
+  this->publish_connected_clients_if_changed_();
+}
+
+void ModbusTCPServer::publish_connected_clients_if_changed_() {
+  if (this->connected_clients_sensor_ == nullptr) {
+    return;
+  }
+
+  int32_t current = static_cast<int32_t>(this->client_socks_.size());
+  if (current == this->last_connected_clients_) {
+    return;
+  }
+
+  this->last_connected_clients_ = current;
+  this->connected_clients_sensor_->publish_state(current);
 }
 
 void ModbusTCPServer::accept_client_() {
