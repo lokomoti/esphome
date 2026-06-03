@@ -11,7 +11,6 @@ CONF_FULL_RESOLUTION = "full_resolution"
 CONF_MAGNITUDE = "magnitude"
 CONF_DYNAMIC_MAGNITUDE = "dynamic_magnitude"
 CONF_RMS = "rms"
-CONF_SAMPLES_PER_UPDATE = "samples_per_update"
 CONF_X = "x"
 CONF_Y = "y"
 CONF_Z = "z"
@@ -56,14 +55,9 @@ CONFIG_SCHEMA = (
     cv.Schema(
         {
             cv.GenerateID(): cv.declare_id(ADXL345SPIComponent),
-            cv.Optional(CONF_OUTPUT_DATA_RATE, default="100hz"): cv.enum(
-                DATA_RATES, lower=True
-            ),
+            cv.Optional(CONF_OUTPUT_DATA_RATE, default="100hz"): cv.enum(DATA_RATES, lower=True),
             cv.Optional(CONF_RANGE, default="4g"): cv.enum(RANGES, lower=True),
             cv.Optional(CONF_FULL_RESOLUTION, default=True): cv.boolean,
-            cv.Optional(CONF_SAMPLES_PER_UPDATE, default=16): cv.int_range(
-                min=1, max=1024
-            ),
             cv.Optional(CONF_X): sensor.sensor_schema(
                 unit_of_measurement="g",
                 accuracy_decimals=3,
@@ -109,7 +103,6 @@ def to_code(config):
     cg.add(var.set_data_rate(config[CONF_OUTPUT_DATA_RATE]))
     cg.add(var.set_range(config[CONF_RANGE]))
     cg.add(var.set_full_resolution(config[CONF_FULL_RESOLUTION]))
-    cg.add(var.set_samples_per_update(config[CONF_SAMPLES_PER_UPDATE]))
 
     if CONF_X in config:
         sens = yield sensor.new_sensor(config[CONF_X])
